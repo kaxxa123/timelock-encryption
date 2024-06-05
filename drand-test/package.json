@@ -1,0 +1,23 @@
+{
+  "name": "drand-test",
+  "version": "1.0.0",
+  "description": "",
+  "main": "build/src/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "rm ./build -rf && tsc",
+    "test": "node ./build/src/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "drand-client": "^1.2.6",
+    "tlock-js": "^0.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}
