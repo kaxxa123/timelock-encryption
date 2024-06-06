@@ -7,7 +7,15 @@ import {
     FastestNodeClient,
     MultiBeaconNode,
     ChainOptions,
+    roundTime,
+    roundAt,
+    ChainInfo
 } from 'drand-client'
+
+import {
+    timelockEncrypt,
+    timelockDecrypt
+} from 'tlock-js'
 
 // The chain hash for the League of Entropy default chain.
 // Running at a 30s frequency
@@ -74,8 +82,8 @@ async function multiBeaconTest(opts: ChainOptions) {
     // Get the chains it follows
     const chains = await multiBeaconNode.chains()
     for (const c of chains) {
-        const info = await c.info()
-        console.log(`Chain with baseUrl ${c.baseUrl} has a genesis time of ${info.genesis_time}`)
+        const info: ChainInfo = await c.info()
+        console.log(info)
     }
 
     // Create clients straight from the chains it returns
@@ -97,10 +105,13 @@ async function monitorBeacon(count: number, opts: ChainOptions) {
     // Connect to a single node for a specific beacon
     const chain = new HttpCachingChain(`https://api.drand.sh/${opts.chainVerificationParams?.chainHash}`, opts)
     const client = new HttpChainClient(chain, opts)
+    const chainInfo = await chain.info();
 
     // Grab the latest beacon value...
     const theLatestBeacon = await fetchBeacon(client)
-    console.log("Latest beacon:")
+    let timeRnd = new Date(roundTime(chainInfo, theLatestBeacon.round)).toLocaleString();
+
+    console.log(`Latest beacon: Round: ${theLatestBeacon.round}, Time: ${timeRnd}`)
     console.log(theLatestBeacon)
     console.log()
 
@@ -132,7 +143,87 @@ async function monitorBeacon(count: number, opts: ChainOptions) {
     console.log()
 }
 
-async function main() {
+async function encryptString(timeOffsetSeconds: number, plaintext: string): Promise<string> {
+    console.log()
+    console.log("=== encryptString ===")
+
+    const timestamp = Date.now() + timeOffsetSeconds * 1000;
+
+    const options: ChainOptions = {
+        disableBeaconVerification: false,
+        noCache: false,
+        chainVerificationParams: {
+            chainHash: unchainedHash,
+            publicKey: unchainedPK
+        }
+    }
+
+    // Connect to a single node for a specific beacon
+    const chain = new HttpCachingChain(`https://api.drand.sh/${options.chainVerificationParams?.chainHash}`, options)
+    const client = new HttpChainClient(chain, options)
+    const chainInfo = await chain.info();
+
+    const round = roundAt(timestamp, chainInfo);
+    let timeRnd = new Date(timestamp).toLocaleString();
+    console.log(`Round number for time ${timeRnd} : ${round}`)
+
+    const ciphertext = await timelockEncrypt(round, Buffer.from(plaintext), client)
+    console.log('Ciphertext')
+    console.log(ciphertext)
+    console.log()
+
+    console.log("=====================")
+    console.log()
+
+    return ciphertext;
+}
+
+async function decryptString(ciphertext: string): Promise<string> {
+
+    console.log()
+    console.log("=== decryptString ===")
+
+    const options: ChainOptions = {
+        disableBeaconVerification: false,
+        noCache: false,
+        chainVerificationParams: {
+            chainHash: unchainedHash,
+            publicKey: unchainedPK
+        }
+    }
+
+    // Connect to a single node for a specific beacon
+    const chain = new HttpCachingChain(`https://api.drand.sh/${options.chainVerificationParams?.chainHash}`, options)
+    const client = new HttpChainClient(chain, options)
+
+    let plaintext = "";
+    try {
+        const plainBuffer = await timelockDecrypt(ciphertext, client);
+        plaintext = plainBuffer.toString()
+        console.log('Plaintext')
+        console.log(plaintext)
+        console.log()
+    }
+    catch (err) {
+        if (err instanceof Error) {
+            console.log("Failed", err.message)
+        }
+        else {
+            console.log("Failed Decryption")
+        }
+    }
+
+    console.log("=====================")
+    console.log()
+
+    return plaintext;
+}
+
+function sleep(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function mainTest(encrypt?: boolean) {
     const options: ChainOptions = {
         // `true` disables checking of signatures on beacons - faster but insecure!!!
         disableBeaconVerification: false,
@@ -148,12 +239,22 @@ async function main() {
         }
     }
 
-    await multiNodeTest(options);
-    await monitorBeacon(3, options);
-    await multiBeaconTest(options);
+    if (encrypt) {
+        const ciphertext = await encryptString(60, "Hello");
+        await sleep(30000);
+        await decryptString(ciphertext);
+
+        await sleep(30001);
+        await decryptString(ciphertext);
+    }
+    else {
+        await multiNodeTest(options);
+        await monitorBeacon(3, options);
+        await multiBeaconTest(options);
+    }
 }
 
-main().catch((error) => {
+mainTest().catch((error) => {
     console.error(error);
     process.exitCode = 1;
 });
